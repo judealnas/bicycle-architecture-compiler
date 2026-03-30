@@ -114,11 +114,18 @@ pub fn synthesize_angle_x(
 pub(crate) fn run_gridsynth(angle: &str, accuracy: &str) -> Result<String, io::Error> {
     dbg!(angle);
     dbg!(accuracy);
-    let cmd = Command::new("gridsynth")
-        .arg("-p") // Ignore global phase
-        .args(["--epsilon", accuracy])
+    
+    // let cmd = Command::new("gridsynth")
+    //     .arg("-p") // Ignore global phase
+    //     .args(["--epsilon", accuracy])
+    //     // Use "--" to ensure negative angles are not interpreted as arguments
+    //     .args(["--", angle])
+    //     .output()?;
+    
+    let cmd = Command::new("pygridsynth")
+        .arg("-ph") // Ignore global phase
         // Use "--" to ensure negative angles are not interpreted as arguments
-        .args(["--", angle])
+        .args(["--", angle, accuracy])
         .output()?;
 
     let mut output = cmd.stdout;
