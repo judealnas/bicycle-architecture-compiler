@@ -1,0 +1,10 @@
+name: bicycle-architecture-compiler
+dependencies:
+  - python=3.12
+  - qiskit
+  - numpy
+  - matplotlib
+  - ipykernel
+  - pip:
+    - pygridsynth
+  
