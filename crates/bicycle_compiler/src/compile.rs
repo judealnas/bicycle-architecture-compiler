@@ -25,7 +25,7 @@ use crate::small_angle;
 
 use BicycleISA::{JointMeasure, Measure, TGate};
 
-/// Construct GHZ state on a path architecture from start to end
+/// Construct GHZ state on a path architecture spanning from `start` to `blocks`-1
 fn ghz_meas(start: usize, blocks: usize) -> Vec<Operation> {
     assert!(blocks > 0);
     let end = start + blocks;
@@ -38,6 +38,28 @@ fn ghz_meas(start: usize, blocks: usize) -> Vec<Operation> {
         .chain(((start + 1)..(end - 1)).step_by(2))
     {
         let op = vec![(r, JointMeasure(z1)), (r + 1, JointMeasure(z1))];
+        ops.push(op);
+    }
+
+    ops
+}
+
+/// Construct measurement ISA operations to create GHZ state between two modules.
+/// Intermediate modules on architectures with limited connecitivty are included in the entangled state.
+fn ghz_meas_on_arch<Arch: Architecture>(start: usize, end: usize, arch: &Arch) -> Vec<Operation> {
+    assert!(end > start);
+    let z1 = TwoBases::new(Pauli::Z, Pauli::I).unwrap();
+    let path = arch
+        .find_path(start, end)
+        .expect("Should be able to find path between blocks");
+
+    let mut ops = vec![];
+    // Perform ZZ measurements on adjacent blocks. Alternating even then odd blocks.
+    for r in (0..path.len() - 1)
+        .step_by(2)
+        .chain((1..path.len() - 1).step_by(2))
+    {
+        let op = vec![(path[r], JointMeasure(z1)), (path[r + 1], JointMeasure(z1))];
         ops.push(op);
     }
 
@@ -349,7 +371,7 @@ mod tests {
 
     use std::sync::LazyLock;
 
-    use crate::operation::Operations;
+    use crate::{architecture::FullArchitecture, operation::Operations};
 
     use super::*;
 
@@ -462,6 +484,36 @@ mod tests {
         let arch = PathArchitecture { data_blocks: 2 };
 
         let ops = ghz_meas(0, arch.data_blocks());
+
+        // One joint operation
+        let joint_ops: Vec<_> = ops.iter().filter(|op| op.len() == 2).collect();
+        assert_eq!(1, joint_ops.len());
+
+        let zz_meas = vec![(0, JointMeasure(z1)), (1, JointMeasure(z1))];
+        assert_eq!(&zz_meas, joint_ops[0]);
+    }
+
+    #[test]
+    fn test_ghz_meas_on_path_arch() {
+        let z1 = TwoBases::new(Pauli::Z, Pauli::I).unwrap();
+        let arch = PathArchitecture { data_blocks: 2 };
+
+        let ops = ghz_meas_on_arch(0, arch.data_blocks() - 1, &arch);
+        // println!("Ops: {ops:#?}");
+        // One joint operation
+        let joint_ops: Vec<_> = ops.iter().filter(|op| op.len() == 2).collect();
+        assert_eq!(1, joint_ops.len());
+
+        let zz_meas = vec![(0, JointMeasure(z1)), (1, JointMeasure(z1))];
+        assert_eq!(&zz_meas, joint_ops[0]);
+    }
+
+    #[test]
+    fn test_ghz_meas_on_full_arch() {
+        let z1 = TwoBases::new(Pauli::Z, Pauli::I).unwrap();
+        let arch = FullArchitecture { data_blocks: 2 };
+
+        let ops = ghz_meas_on_arch(0, arch.data_blocks() - 1, &arch);
 
         // One joint operation
         let joint_ops: Vec<_> = ops.iter().filter(|op| op.len() == 2).collect();
