@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::operation::Operation;
+use bicycle_common::{BicycleISA::JointMeasure, Pauli, TwoBases};
 
 pub trait Architecture {
     fn for_qubits(qubits: usize) -> Self
@@ -21,10 +22,8 @@ pub trait Architecture {
     fn data_blocks(&self) -> usize;
     fn qubits(&self) -> usize;
     fn validate_operation(&self, op: &Operation) -> bool;
-    fn find_path(&self, _start: usize, _end: usize) -> Option<Vec<usize>> {
-        // Find a path from one block to another
-        None
-    }
+    fn ghz_meas(&self, targets: &[usize]) -> Vec<Operation>;
+    fn is_magic_block(&self, block_i: usize) -> bool;
 }
 
 /// Consists of blocks plus one magic state factory at the end of the path
@@ -65,6 +64,24 @@ impl PathArchitecture {
         // }
         Some((start.min(end)..=start.max(end)).collect())
     }
+
+    fn ghz_meas(&self, targets: &[usize]) -> Vec<Operation> {
+        let start = targets.iter().min().copied().unwrap_or(0);
+        let end = targets.iter().max().copied().unwrap_or(0);
+        let z1 = TwoBases::new(Pauli::Z, Pauli::I).unwrap();
+
+        let mut ops = vec![];
+        for i in (start..end).step_by(2).chain((start + 1..end).step_by(2)) {
+            let op = vec![(i, JointMeasure(z1)), (i + 1, JointMeasure(z1))];
+            ops.push(op);
+        }
+
+        ops
+    }
+
+    fn is_magic_block(&self, block_i: usize) -> bool {
+        block_i == self.data_blocks() - 1
+    }
 }
 
 impl Architecture for PathArchitecture {
@@ -84,8 +101,12 @@ impl Architecture for PathArchitecture {
         PathArchitecture::validate_operation(self, op)
     }
 
-    fn find_path(&self, start: usize, end: usize) -> Option<Vec<usize>> {
-        PathArchitecture::find_path(self, start, end)
+    fn ghz_meas(&self, targets: &[usize]) -> Vec<Operation> {
+        PathArchitecture::ghz_meas(self, targets)
+    }
+
+    fn is_magic_block(&self, block_i: usize) -> bool {
+        PathArchitecture::is_magic_block(self, block_i)
     }
 }
 
@@ -115,13 +136,26 @@ impl FullArchitecture {
         true
     }
 
-    pub fn find_path(&self, start: usize, end: usize) -> Option<Vec<usize>> {
-        // NOTE: Intentionally not checking that start and end are valid blocks
-        // since magic state factory block assumed to have index `data_blocks`
-        // if start >= self.data_blocks() || end >= self.data_blocks() {
-        //     return None;
-        // }
-        Some(vec![start, end])
+    fn ghz_meas(&self, targets: &[usize]) -> Vec<Operation> {
+        let z1 = TwoBases::new(Pauli::Z, Pauli::I).unwrap();
+
+        let mut ops = vec![];
+        for i in (0..targets.len() - 1)
+            .step_by(2)
+            .chain((1..targets.len() - 1).step_by(2))
+        {
+            let op = vec![
+                (targets[i], JointMeasure(z1)),
+                (targets[i + 1], JointMeasure(z1)),
+            ];
+            ops.push(op);
+        }
+
+        ops
+    }
+
+    fn is_magic_block(&self, block_i: usize) -> bool {
+        true
     }
 }
 
@@ -142,7 +176,50 @@ impl Architecture for FullArchitecture {
         FullArchitecture::validate_operation(self, op)
     }
 
-    fn find_path(&self, start: usize, end: usize) -> Option<Vec<usize>> {
-        FullArchitecture::find_path(self, start, end)
+    fn ghz_meas(&self, targets: &[usize]) -> Vec<Operation> {
+        FullArchitecture::ghz_meas(self, targets)
+    }
+
+    fn is_magic_block(&self, block_i: usize) -> bool {
+        FullArchitecture::is_magic_block(self, block_i)
+    }
+}
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ghz_meas_path() {
+        let z1 = TwoBases::new(Pauli::Z, Pauli::I).unwrap();
+        let arch = PathArchitecture { data_blocks: 2 };
+
+        let ops = arch.ghz_meas(&[0, 1]);
+        // One joint operation
+        let joint_ops: Vec<_> = ops.iter().filter(|op| op.len() == 2).collect();
+        assert_eq!(1, joint_ops.len());
+
+        let zz_meas = vec![(0, JointMeasure(z1)), (1, JointMeasure(z1))];
+        assert_eq!(&zz_meas, joint_ops[0]);
+    }
+
+    #[test]
+    fn test_ghz_meas_full() {
+        let z1 = TwoBases::new(Pauli::Z, Pauli::I).unwrap();
+        let arch = FullArchitecture { data_blocks: 4 };
+
+        let ops = arch.ghz_meas(&[0, 1, 2, 3]);
+        println!("GHZ measurement operations: {:?}", ops);
+
+        // Two joint operations
+        let joint_ops: Vec<_> = ops.iter().filter(|op| op.len() == 2).cloned().collect();
+        assert_eq!(3, joint_ops.len());
+
+        let expected_ops = vec![
+            vec![(0usize, JointMeasure(z1)), (1usize, JointMeasure(z1))],
+            vec![(2usize, JointMeasure(z1)), (3usize, JointMeasure(z1))],
+            vec![(1usize, JointMeasure(z1)), (2usize, JointMeasure(z1))],
+        ];
+
+        assert_eq!(expected_ops, joint_ops);
     }
 }
