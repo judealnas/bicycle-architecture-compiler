@@ -16,6 +16,7 @@ use bicycle_cliffords::decomposition::NativeMeasurementImpl;
 use bicycle_cliffords::{CompleteMeasurementTable, PauliString};
 use bicycle_common::{BicycleISA, Pauli, TGateData, TwoBases};
 
+use crate::architecture::Architecture;
 use crate::language::AnglePrecision;
 use crate::small_angle::SingleRotation;
 use crate::{architecture::PathArchitecture, operation::Operation};
@@ -38,28 +39,6 @@ fn ghz_meas(start: usize, blocks: usize) -> Vec<Operation> {
         .chain(((start + 1)..(end - 1)).step_by(2))
     {
         let op = vec![(r, JointMeasure(z1)), (r + 1, JointMeasure(z1))];
-        ops.push(op);
-    }
-
-    ops
-}
-
-/// Construct measurement ISA operations to create GHZ state between two modules.
-/// Intermediate modules on architectures with limited connecitivty are included in the entangled state.
-fn ghz_meas_on_arch<Arch: Architecture>(start: usize, end: usize, arch: &Arch) -> Vec<Operation> {
-    assert!(end > start);
-    let z1 = TwoBases::new(Pauli::Z, Pauli::I).unwrap();
-    let path = arch
-        .find_path(start, end)
-        .expect("Should be able to find path between blocks");
-
-    let mut ops = vec![];
-    // Perform ZZ measurements on adjacent blocks. Alternating even then odd blocks.
-    for r in (0..path.len() - 1)
-        .step_by(2)
-        .chain((1..path.len() - 1).step_by(2))
-    {
-        let op = vec![(path[r], JointMeasure(z1)), (path[r + 1], JointMeasure(z1))];
         ops.push(op);
     }
 
@@ -121,8 +100,8 @@ impl BlockBases {
 }
 
 /// Compile a Pauli measurement to ISA instructions
-pub fn compile_measurement(
-    architecture: &PathArchitecture,
+pub fn compile_measurement<Arch: Architecture>(
+    architecture: &Arch,
     measurement_table: &CompleteMeasurementTable,
     basis: Vec<Pauli>,
 ) -> Vec<Operation> {
@@ -135,12 +114,13 @@ pub fn compile_measurement(
     let basis = extend_basis(basis);
 
     // Find implementation for each block
+    // NOTE: Hard-coded trivial mapping by using `chunks_exact`
     let block_instrs = basis.chunks_exact(11).map(|paulis| {
         // Only apply a controlled-Pauli if its non-trivial
         if paulis.iter().all(|p| *p == Pauli::I) {
             (None, BasisChanger::default())
         } else {
-            let mut ps = vec![Pauli::I];
+            let mut ps = vec![Pauli::I]; // Prepend identity for pivot qubit
             ps.extend_from_slice(paulis);
             let p: PauliString = (&ps[..]).try_into().unwrap();
             let meas_impl = measurement_table.min_data(p);
@@ -159,7 +139,7 @@ pub fn compile_measurement(
     // Apply rotations to blocks that have nontrivial rotations (requires use of pivot)
     for (block_i, meas_impl) in meas_impls
         .iter()
-        .enumerate()
+        .enumerate() // NOTE: Target block inferred from position in meas_impls
         .filter_map(|(i, opt)| opt.as_ref().map(|val| (i, val)))
     {
         for nat_measure in meas_impl.rotations() {
@@ -192,17 +172,24 @@ pub fn compile_measurement(
     }
 
     // Find the range for which we need to prepare a GHZ state
-    let first_nontrivial = meas_impls.iter().position(|rot| !rot.is_none()).unwrap();
-    let last_nontrivial = meas_impls.iter().rposition(|rot| !rot.is_none()).unwrap();
-    let mut middle_ops = ghz_meas(first_nontrivial, last_nontrivial - first_nontrivial + 1);
+    let targets = meas_impls
+        .iter()
+        .enumerate()
+        .filter_map(|(i, rot)| if !rot.is_none() { Some(i) } else { None })
+        .collect::<Vec<_>>();
+    let mut middle_ops = architecture.ghz_meas(&targets); // Prepare GHZ on all non-trivial blocks
 
     // Uncompute GHZ
+    // NOTE: Should need no change to support FullArchitecture.
+    // In that scenario, the support of the GHZ state should match that of the measurement, so
+    // `opt` should never be `None`
     for (block_i, opt) in meas_impls.iter().enumerate() {
         match opt {
             None => middle_ops.push(vec![(block_i, Measure(x1))]), // was trivial
             Some(_) => middle_ops.push(vec![(block_i, Measure(y1))]),
         }
     }
+
     // Change basis on middle ops
     ops.extend(
         middle_ops
@@ -246,6 +233,7 @@ pub fn compile_rotation(
     let y1 = TwoBases::new(Pauli::Y, Pauli::I).unwrap();
 
     // Find implementation for each block
+    // NOTE: `chunks_exact` hard-codes trivial mapping
     let block_instrs = basis.chunks_exact(11).enumerate().map(|(block_i, paulis)| {
         // Only apply a controlled-Pauli if its non-trivial
         if paulis.iter().all(|p| *p == Pauli::I) {
@@ -312,12 +300,27 @@ pub fn compile_rotation(
     }
 
     // Find the range for which we need to prepare a GHZ state
+    // TODO: Hard-coded assumption of path architecture with MSF at end
     let first_nontrivial = meas_impls
         .iter()
         .position(|support| !support.is_none())
         .unwrap_or(n - 1);
+    let targets = meas_impls
+        .iter()
+        .enumerate()
+        .filter_map(|(i, rot)| if !rot.is_none() { Some(i) } else { None })
+        .collect::<Vec<_>>();
+
+    // NOTE: injecting on first magic block found
+    let magic_block = targets
+        .iter()
+        .copied()
+        .find(|&i| architecture.is_magic_block(i))
+        .unwrap_or(n - 1);
+
     // Prepare GHZ up to and including the magic block
-    let mut middle_ops = ghz_meas(first_nontrivial, n - first_nontrivial);
+    // let mut middle_ops = ghz_meas(first_nontrivial, n - first_nontrivial);
+    let mut middle_ops = architecture.ghz_meas(&targets);
 
     // Apply small-angle X(φ) rotation on block n
     // TODO: Ignore compile-time Clifford corrections
@@ -328,7 +331,7 @@ pub fn compile_rotation(
             SingleRotation::X { dagger } => TGateData::new(Pauli::X, false, dagger),
         }
         .unwrap();
-        middle_ops.push(vec![(n - 1, TGate(tgate_data))]);
+        middle_ops.push(vec![(magic_block, TGate(tgate_data))]);
     }
 
     // Uncompute GHZ state by local measurements on all data blocks (even if they had trivial rotations)
@@ -484,36 +487,6 @@ mod tests {
         let arch = PathArchitecture { data_blocks: 2 };
 
         let ops = ghz_meas(0, arch.data_blocks());
-
-        // One joint operation
-        let joint_ops: Vec<_> = ops.iter().filter(|op| op.len() == 2).collect();
-        assert_eq!(1, joint_ops.len());
-
-        let zz_meas = vec![(0, JointMeasure(z1)), (1, JointMeasure(z1))];
-        assert_eq!(&zz_meas, joint_ops[0]);
-    }
-
-    #[test]
-    fn test_ghz_meas_on_path_arch() {
-        let z1 = TwoBases::new(Pauli::Z, Pauli::I).unwrap();
-        let arch = PathArchitecture { data_blocks: 2 };
-
-        let ops = ghz_meas_on_arch(0, arch.data_blocks() - 1, &arch);
-        // println!("Ops: {ops:#?}");
-        // One joint operation
-        let joint_ops: Vec<_> = ops.iter().filter(|op| op.len() == 2).collect();
-        assert_eq!(1, joint_ops.len());
-
-        let zz_meas = vec![(0, JointMeasure(z1)), (1, JointMeasure(z1))];
-        assert_eq!(&zz_meas, joint_ops[0]);
-    }
-
-    #[test]
-    fn test_ghz_meas_on_full_arch() {
-        let z1 = TwoBases::new(Pauli::Z, Pauli::I).unwrap();
-        let arch = FullArchitecture { data_blocks: 2 };
-
-        let ops = ghz_meas_on_arch(0, arch.data_blocks() - 1, &arch);
 
         // One joint operation
         let joint_ops: Vec<_> = ops.iter().filter(|op| op.len() == 2).collect();
