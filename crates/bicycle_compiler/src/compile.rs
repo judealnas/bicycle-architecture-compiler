@@ -378,6 +378,7 @@ pub fn compile_rotation<A: Architecture>(
 mod tests {
 
     use std::sync::LazyLock;
+    use std::{error::Error, path::Path};
 
     use crate::{architecture::FullArchitecture, operation::Operations};
 
@@ -395,15 +396,15 @@ mod tests {
 
     const ACCURACY: AnglePrecision = AnglePrecision::lit("1e-10");
 
-    static GROSS_TABLE: LazyLock<CompleteMeasurementTable> = LazyLock::new(|| {
-        let mut builder = MeasurementTableBuilder::new(NativeMeasurement::all(), GROSS_MEASUREMENT);
-        builder.build();
-        builder.complete().expect("Table building should succeed")
-    });
     // static GROSS_TABLE: LazyLock<CompleteMeasurementTable> = LazyLock::new(|| {
-    //     let table_path = Path::new("../../data/table_gross");
-    //     crate::deserialize_table(table_path).expect("Should be able to deserialize table")
+    //     let mut builder = MeasurementTableBuilder::new(NativeMeasurement::all(), GROSS_MEASUREMENT);
+    //     builder.build();
+    //     builder.complete().expect("Table building should succeed")
     // });
+    static GROSS_TABLE: LazyLock<CompleteMeasurementTable> = LazyLock::new(|| {
+        let table_path = Path::new("../../data/table_gross");
+        crate::deserialize_table(table_path).expect("Should be able to deserialize table")
+    });
 
     /// Convert a native measurement to a list of Operations
     fn native_instructions(
@@ -566,8 +567,10 @@ mod tests {
                 .collect();
             expected.append(&mut native_instructions(0, &meas0));
             expected.append(&mut native_instructions(1, &meas1));
+
+            let targets = (0..arch.data_blocks()).collect::<Vec<_>>();
             expected.extend(
-                ghz_meas(0, arch.data_blocks())
+                arch.ghz_meas(&targets)
                     .into_iter()
                     .map(|o| block_bases.change_basis(o)),
             );
@@ -633,8 +636,9 @@ mod tests {
                         native_instructions(block_i, meas_impl.base_measurement()).into_iter(),
                     );
                 }
+                let targets: Vec<usize> = (0..arch.data_blocks()).collect();
                 expected.extend(
-                    ghz_meas(0, arch.data_blocks())
+                    arch.ghz_meas(&targets)
                         .into_iter()
                         .map(|op| block_basis.change_basis(op)),
                 );
@@ -779,7 +783,8 @@ mod tests {
                     );
                 }
 
-                let mut middle_ops = ghz_meas(0, arch.data_blocks());
+                let targets = (0..arch.data_blocks()).collect::<Vec<_>>();
+                let mut middle_ops = arch.ghz_meas(&targets);
                 middle_ops.push(vec![(
                     blocks - 1,
                     TGate(TGateData::new(Pauli::X, false, false).unwrap()),
@@ -985,7 +990,7 @@ mod tests {
 
         #[test]
         fn compile_native_rotation() -> Result<(), Box<dyn Error>> {
-            let arch = PathArchitecture { data_blocks: 1 };
+            let arch = FullArchitecture { data_blocks: 1 };
             let meas = random_min_native_measurement(&GROSS_TABLE);
 
             let ps: [Pauli; 12] = meas.measures().into();
@@ -1021,7 +1026,7 @@ mod tests {
         #[test]
         fn compile_multiblock() -> Result<(), Box<dyn Error>> {
             for blocks in 2..10 {
-                let arch = PathArchitecture {
+                let arch = FullArchitecture {
                     data_blocks: blocks,
                 };
                 let ps: Vec<_> = random_nontrivial_paulistrings().take(blocks).collect();
@@ -1076,7 +1081,8 @@ mod tests {
                     );
                 }
 
-                let mut middle_ops = ghz_meas(0, arch.data_blocks());
+                let targets = (0..arch.data_blocks()).collect::<Vec<_>>();
+                let mut middle_ops = arch.ghz_meas(&targets);
                 middle_ops.push(vec![(
                     blocks - 1,
                     TGate(TGateData::new(Pauli::X, false, false).unwrap()),

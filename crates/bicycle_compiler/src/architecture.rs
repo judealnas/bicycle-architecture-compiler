@@ -191,15 +191,22 @@ mod tests {
     #[test]
     fn test_ghz_meas_path() {
         let z1 = TwoBases::new(Pauli::Z, Pauli::I).unwrap();
-        let arch = PathArchitecture { data_blocks: 2 };
+        let arch = PathArchitecture { data_blocks: 4 };
 
-        let ops = arch.ghz_meas(&[0, 1]);
+        let ops = arch.ghz_meas(&[0, 1, 2, 3]);
         // One joint operation
         let joint_ops: Vec<_> = ops.iter().filter(|op| op.len() == 2).collect();
-        assert_eq!(1, joint_ops.len());
+        assert_eq!(3, joint_ops.len());
 
-        let zz_meas = vec![(0, JointMeasure(z1)), (1, JointMeasure(z1))];
-        assert_eq!(&zz_meas, joint_ops[0]);
+        let zz_meas = vec![
+            vec![(0usize, JointMeasure(z1)), (1usize, JointMeasure(z1))],
+            vec![(2usize, JointMeasure(z1)), (3usize, JointMeasure(z1))],
+            vec![(1usize, JointMeasure(z1)), (2usize, JointMeasure(z1))],
+        ];
+
+        for (i, (expected, actual)) in zz_meas.iter().zip(joint_ops.iter().copied()).enumerate() {
+            assert_eq!(expected, actual, "mismatch at index {i}");
+        }
     }
 
     #[test]
