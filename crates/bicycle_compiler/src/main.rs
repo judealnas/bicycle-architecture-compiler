@@ -26,7 +26,7 @@ use bicycle_compiler::language::{AnglePrecision, PbcOperation};
 
 use io::Write;
 
-use bicycle_compiler::{PathArchitecture, optimize};
+use bicycle_compiler::{FullArchitecture, PathArchitecture, optimize};
 use clap::{Parser, Subcommand};
 use log::{debug, info};
 use serde_json::Deserializer;
@@ -150,7 +150,8 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     // Set the architecture based on the first operation
     let first_op = ops.peek();
     let architecture = if let Some(op) = first_op {
-        PathArchitecture::for_qubits(op.basis().len())
+        // PathArchitecture::for_qubits(op.basis().len())
+        FullArchitecture::for_qubits(op.basis().len())
     } else {
         // No ops, may as well terminate now.
         return Ok(());

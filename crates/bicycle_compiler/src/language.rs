@@ -20,7 +20,7 @@ use fixed::types::I32F96;
 use bicycle_cliffords::CompleteMeasurementTable;
 use serde::{Deserialize, Serialize};
 
-use crate::{architecture::PathArchitecture, compile, operation::Operation};
+use crate::{Architecture, architecture::PathArchitecture, compile, operation::Operation};
 
 pub type AnglePrecision = I32F96;
 
@@ -46,9 +46,9 @@ impl PbcOperation {
             angle: AnglePrecision::from_num(angle),
         }
     }
-    pub fn compile(
+    pub fn compile<A: Architecture>(
         &self,
-        architecture: &PathArchitecture,
+        architecture: &A,
         measurement_table: &CompleteMeasurementTable,
         accuracy: AnglePrecision,
     ) -> Vec<Operation> {
