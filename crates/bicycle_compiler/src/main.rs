@@ -150,12 +150,14 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     // Set the architecture based on the first operation
     let first_op = ops.peek();
     let architecture = if let Some(op) = first_op {
-        // PathArchitecture::for_qubits(op.basis().len())
-        FullArchitecture::for_qubits(op.basis().len())
+        PathArchitecture::for_qubits(op.basis().len())
+        // FullArchitecture::for_qubits(op.basis().len())
     } else {
         // No ops, may as well terminate now.
         return Ok(());
     };
+
+    dbg!(architecture);
 
     let compiled = ops.map(|op| op.compile(&architecture, &measurement_table, cli.accuracy));
 
