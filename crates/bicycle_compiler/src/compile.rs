@@ -103,7 +103,7 @@ impl BlockBases {
 }
 
 /// Compile a Pauli measurement to ISA instructions
-pub fn compile_measurement<Arch: Architecture>(
+pub fn compile_measurement<Arch: Architecture + ?Sized>(
     architecture: &Arch,
     measurement_table: &CompleteMeasurementTable,
     basis: Vec<Pauli>,
@@ -219,7 +219,7 @@ pub fn compile_measurement<Arch: Architecture>(
 }
 
 /// Compile a Pauli rotation of some rational angle to Operations
-pub fn compile_rotation<A: Architecture>(
+pub fn compile_rotation<A: Architecture + ?Sized>(
     architecture: &A,
     measurement_table: &CompleteMeasurementTable,
     basis: Vec<Pauli>,

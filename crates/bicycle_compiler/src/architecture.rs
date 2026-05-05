@@ -14,6 +14,13 @@
 
 use crate::operation::Operation;
 use bicycle_common::{BicycleISA::JointMeasure, Pauli, TwoBases};
+use clap::ValueEnum;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+pub enum ArchitectureChoice {
+    Path,
+    Full,
+}
 
 pub trait Architecture {
     fn for_qubits(qubits: usize) -> Self
@@ -24,6 +31,30 @@ pub trait Architecture {
     fn validate_operation(&self, op: &Operation) -> bool;
     fn ghz_meas(&self, targets: &[usize]) -> Vec<Operation>;
     fn is_magic_block(&self, block_i: usize) -> bool;
+}
+
+impl Architecture for &dyn Architecture {
+    fn for_qubits(_qubits: usize) -> Self
+    where
+        Self: Sized,
+    {
+        unimplemented!("Cannot construct architecture from qubits when using trait object")
+    }
+    fn data_blocks(&self) -> usize {
+        (*self).data_blocks()
+    }
+    fn qubits(&self) -> usize {
+        (*self).qubits()
+    }
+    fn validate_operation(&self, op: &Operation) -> bool {
+        (*self).validate_operation(op)
+    }
+    fn ghz_meas(&self, targets: &[usize]) -> Vec<Operation> {
+        (*self).ghz_meas(targets)
+    }
+    fn is_magic_block(&self, block_i: usize) -> bool {
+        (*self).is_magic_block(block_i)
+    }
 }
 
 /// Consists of blocks plus one magic state factory at the end of the path

@@ -23,10 +23,12 @@ use bicycle_cliffords::{
     MeasurementChoices, MeasurementTableBuilder, native_measurement::NativeMeasurement,
 };
 use bicycle_compiler::language::{AnglePrecision, PbcOperation};
+use bicycle_compiler::{
+    Architecture, ArchitectureChoice, FullArchitecture, PathArchitecture, optimize,
+};
 
 use io::Write;
 
-use bicycle_compiler::{FullArchitecture, PathArchitecture, optimize};
 use clap::{Parser, Subcommand};
 use log::{debug, info};
 use serde_json::Deserializer;
@@ -44,6 +46,9 @@ struct Cli {
     /// The accuracy of small angle synthesis
     #[arg(short, long, default_value_t = AnglePrecision::lit("1e-9"))]
     accuracy: AnglePrecision,
+    /// The architecture to compile for
+    #[arg(short = 'A', long, default_value = "path")]
+    arch: ArchitectureChoice,
 }
 
 /// Caching commands
@@ -149,17 +154,19 @@ fn main() -> Result<(), Box<dyn error::Error>> {
 
     // Set the architecture based on the first operation
     let first_op = ops.peek();
-    let architecture = if let Some(op) = first_op {
-        PathArchitecture::for_qubits(op.basis().len())
-        // FullArchitecture::for_qubits(op.basis().len())
+    let architecture: Box<dyn Architecture> = if let Some(op) = first_op {
+        match cli.arch {
+            ArchitectureChoice::Path => Box::new(PathArchitecture::for_qubits(op.basis().len())),
+            ArchitectureChoice::Full => Box::new(FullArchitecture::for_qubits(op.basis().len())),
+        }
     } else {
         // No ops, may as well terminate now.
         return Ok(());
     };
 
-    dbg!(architecture);
+    dbg!(cli.arch);
 
-    let compiled = ops.map(|op| op.compile(&architecture, &measurement_table, cli.accuracy));
+    let compiled = ops.map(|op| op.compile(&*architecture, &measurement_table, cli.accuracy));
 
     let optimized_auts = compiled.map(optimize::remove_trivial_automorphisms);
     let mut optimized_chunked_ops = optimize::remove_duplicate_measurements_chunked(optimized_auts);

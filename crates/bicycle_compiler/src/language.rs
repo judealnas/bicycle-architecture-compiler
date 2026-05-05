@@ -46,7 +46,7 @@ impl PbcOperation {
             angle: AnglePrecision::from_num(angle),
         }
     }
-    pub fn compile<A: Architecture>(
+    pub fn compile<A: Architecture + ?Sized>(
         &self,
         architecture: &A,
         measurement_table: &CompleteMeasurementTable,

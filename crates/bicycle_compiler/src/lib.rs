@@ -18,12 +18,12 @@ mod compile;
 pub mod language;
 pub mod operation;
 pub mod optimize;
-pub mod small_angle;
 pub mod partition;
+pub mod small_angle;
 
 use std::{error::Error, path::Path};
 
-pub use architecture::{PathArchitecture, FullArchitecture, Architecture};
+pub use architecture::{Architecture, ArchitectureChoice, FullArchitecture, PathArchitecture};
 use bicycle_cliffords::CompleteMeasurementTable;
 
 pub fn deserialize_table(cache_path: &Path) -> Result<CompleteMeasurementTable, Box<dyn Error>> {
