@@ -185,6 +185,7 @@ impl Architecture for FullArchitecture {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -303,12 +303,7 @@ pub fn compile_rotation<A: Architecture>(
     }
 
     // Find the range for which we need to prepare a GHZ state
-    // TODO: Hard-coded assumption of path architecture with MSF at end
-    // let first_nontrivial = meas_impls
-    //     .iter()
-    //     .position(|support| !support.is_none())
-    //     .unwrap_or(n - 1);
-    let targets = meas_impls
+    let mut targets = meas_impls
         .iter()
         .enumerate()
         .filter_map(|(i, rot)| if !rot.is_none() { Some(i) } else { None })
@@ -322,8 +317,14 @@ pub fn compile_rotation<A: Architecture>(
         .find(|&i| architecture.is_magic_block(i))
         .unwrap_or(n - 1); // NOTE: default value here encodes default magic block location
 
+    // Ensure the magic block is in the target list so GHZ preparation includes it
+    if !targets.contains(&magic_block) {
+        targets.push(magic_block);
+    }
+    targets.sort_unstable();
+    targets.dedup();
+
     // Prepare GHZ up to and including the magic block
-    // let mut middle_ops = ghz_meas(first_nontrivial, n - first_nontrivial);
     let mut middle_ops = architecture.ghz_meas(&targets);
 
     // Apply small-angle X(φ) rotation on block n
