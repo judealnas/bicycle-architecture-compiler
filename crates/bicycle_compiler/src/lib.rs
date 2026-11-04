@@ -18,7 +18,6 @@ mod compile;
 pub mod language;
 pub mod operation;
 pub mod optimize;
-pub mod partition;
 pub mod small_angle;
 
 use std::{error::Error, path::Path};
